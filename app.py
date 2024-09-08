@@ -2,6 +2,11 @@ import streamlit as st
 from pymongo import MongoClient
 import pandas as pd
 import plotly.express as px
+from collections import Counter
+import matplotlib.pyplot as plt
+from wordcloud import WordCloud
+import re
+from textblob import TextBlob
 
 # MongoDB connection
 def connect_to_mongodb(connection_string):
@@ -35,10 +40,42 @@ def get_document_count(client, db_name, collection_name):
         print(f"Error getting document count from MongoDB: {e}")
         return 0
 
+# Function to clean text and extract keywords
+def extract_keywords(text):
+    text = re.sub(r'[^\w\s]', '', text.lower())
+    words = text.split()
+    return words
+
+# Function to get top keywords
+def get_top_keywords(df, column, top_n=10):
+    all_text = " ".join(df[column].dropna())
+    keywords = extract_keywords(all_text)
+    keyword_counts = Counter(keywords)
+    top_keywords = keyword_counts.most_common(top_n)
+    keyword_df = pd.DataFrame(top_keywords, columns=['Keyword', 'Count'])
+    return keyword_df
+
+# Function for sentiment analysis
+def analyze_sentiment(text):
+    analysis = TextBlob(text)
+    if analysis.sentiment.polarity > 0:
+        return 'Positive'
+    elif analysis.sentiment.polarity == 0:
+        return 'Neutral'
+    else:
+        return 'Negative'
+
+def get_sentiment_distribution(df, column):
+    sentiments = df[column].dropna().apply(analyze_sentiment)
+    sentiment_counts = sentiments.value_counts()
+    sentiment_df = pd.DataFrame(sentiment_counts).reset_index()
+    sentiment_df.columns = ['Sentiment', 'Count']
+    return sentiment_df
+
 def main():
     st.set_page_config(page_title="Airbnb Data Analysis", layout="wide")
     
-    # Custom CSS
+    # Custom CSS for styling
     st.markdown("""
     <style>
     .main {
@@ -52,10 +89,10 @@ def main():
     
     st.title("Airbnb Data Analysis Dashboard")
     
-    # Replace with your MongoDB connection string and collection details
-    connection_string = "mongodb+srv://bharathwajravi:FxcugqUZncJSZU4u@cluster0.yid1esl.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
-    db_name = 'Airbub_Analysis'
-    collection_name = 'CLEANED_AIRBUB'
+    # MongoDB connection details
+    connection_string = "mongodb+srv://Bharathwajravi:charanpooja@cluster0.fhgbfbk.mongodb.net/"
+    db_name = 'sample_airbnb'
+    collection_name = 'CLEANED_AIRBNB'
 
     # Connect to MongoDB
     client = connect_to_mongodb(connection_string)
@@ -74,134 +111,94 @@ def main():
                 df = pd.DataFrame(documents)
                 st.write(f"Retrieved {df.shape[0]} documents")
 
-                # Dropdown menu for chart selection
-                chart_options = []
-                if 'price' in df.columns:
-                    chart_options.append('Price Distribution')
-                if 'availability_30' in df.columns:
-                    chart_options.append('Availability in Next 30 Days')
-                if 'latitude' in df.columns and 'longitude' in df.columns:
-                    chart_options.append('Price Distribution by Location')
-                if 'number_of_reviews' in df.columns:
-                    chart_options.append('Number of Reviews Distribution')
-                if 'accommodates' in df.columns:
-                    chart_options.append('Accommodation Capacity')
-                if 'bathrooms' in df.columns:
-                    chart_options.append('Number of Bathrooms')
-                if 'bedrooms' in df.columns:
-                    chart_options.append('Number of Bedrooms')
-                if 'beds' in df.columns:
-                    chart_options.append('Number of Beds')
-                if 'cleaning_fee' in df.columns:
-                    chart_options.append('Cleaning Fee Distribution')
-                if 'security_deposit' in df.columns:
-                    chart_options.append('Security Deposit Distribution')
-                if 'weekly_price' in df.columns:
-                    chart_options.append('Weekly Price Distribution')
-                if 'monthly_price' in df.columns:
-                    chart_options.append('Monthly Price Distribution')
+                # Tab layout for chart selection
+                tabs = ["Accommodation Capacity", "Bedrooms", "Bathrooms", "Neighborhood Overview", "Transit Options", "Price Analysis"]
 
-                selected_charts = st.multiselect('Select Charts to Display', options=chart_options)
+                tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(tabs)
 
-                # Display selected charts
-                for chart in selected_charts:
-                    if chart == 'Price Distribution':
-                        st.subheader("Price Distribution")
-                        fig1 = px.histogram(df, x='price', nbins=50, title='Distribution of Listing Prices',
-                                            labels={'price': 'Price (USD)', 'count': 'Number of Listings'},
+                with tab1:
+                    if 'accommodates' in df.columns:
+                        st.subheader("Accommodation Capacity")
+                        fig1 = px.histogram(df, x='accommodates', nbins=15, title='Distribution of Accommodation Capacity',
+                                            labels={'accommodates': 'Number of Guests Accommodated', 'count': 'Number of Listings'},
                                             color_discrete_sequence=px.colors.qualitative.Pastel)
                         fig1.update_layout(template='plotly_dark')
                         st.plotly_chart(fig1)
 
-                    if chart == 'Availability in Next 30 Days':
-                        st.subheader("Availability in Next 30 Days")
-                        fig2 = px.histogram(df, x='availability_30', nbins=30, title='Availability of Listings in the Next 30 Days',
-                                            labels={'availability_30': 'Days Available', 'count': 'Number of Listings'},
+                with tab2:
+                    if 'bedrooms' in df.columns:
+                        st.subheader("Number of Bedrooms")
+                        fig2 = px.histogram(df, x='bedrooms', nbins=15, title='Distribution of Number of Bedrooms',
+                                            labels={'bedrooms': 'Number of Bedrooms', 'count': 'Number of Listings'},
                                             color_discrete_sequence=px.colors.qualitative.Pastel)
                         fig2.update_layout(template='plotly_dark')
                         st.plotly_chart(fig2)
 
-                    if chart == 'Price Distribution by Location':
-                        st.subheader("Price Distribution by Location")
-                        fig3 = px.scatter_mapbox(df, lat='latitude', lon='longitude', color='price',
-                                                 size='price', color_continuous_scale=px.colors.cyclical.IceFire,
-                                                 size_max=15, zoom=10, mapbox_style="carto-positron",
-                                                 title='Geographic Distribution of Listings by Price',
-                                                 labels={'price': 'Price (USD)'})
-                        fig3.update_layout(template='plotly_dark', margin=dict(r=0, t=0, l=0, b=0))
-                        st.plotly_chart(fig3, use_container_width=True)
-
-                    if chart == 'Number of Reviews Distribution':
-                        st.subheader("Number of Reviews Distribution")
-                        fig4 = px.histogram(df, x='number_of_reviews', nbins=50, title='Distribution of Number of Reviews',
-                                            labels={'number_of_reviews': 'Number of Reviews', 'count': 'Number of Listings'},
+                with tab3:
+                    if 'bathrooms' in df.columns:
+                        st.subheader("Number of Bathrooms")
+                        fig3 = px.histogram(df, x='bathrooms', nbins=15, title='Distribution of Number of Bathrooms',
+                                            labels={'bathrooms': 'Number of Bathrooms', 'count': 'Number of Listings'},
                                             color_discrete_sequence=px.colors.qualitative.Pastel)
-                        fig4.update_layout(template='plotly_dark')
-                        st.plotly_chart(fig4)
+                        fig3.update_layout(template='plotly_dark')
+                        st.plotly_chart(fig3)
 
-                    if chart == 'Accommodation Capacity':
-                        st.subheader("Accommodation Capacity")
-                        fig5 = px.histogram(df, x='accommodates', nbins=15, title='Distribution of Accommodation Capacity',
-                                            labels={'accommodates': 'Number of Guests Accommodated', 'count': 'Number of Listings'},
+                with tab4:
+                    if 'neighborhood_overview' in df.columns:
+                        st.subheader("Neighborhood Overview")
+
+                        # Get sentiment distribution
+                        sentiment_df = get_sentiment_distribution(df, 'neighborhood_overview')
+
+                        # Display sentiment distribution as bar chart
+                        st.subheader("Sentiment Distribution in Neighborhood Overview")
+                        fig_sentiment = px.bar(sentiment_df, x='Sentiment', y='Count', title='Sentiment Distribution of Neighborhood Descriptions',
+                                              color='Count', labels={'Sentiment': 'Sentiment', 'Count': 'Number of Listings'},
+                                              color_discrete_sequence=px.colors.qualitative.Pastel)
+                        fig_sentiment.update_layout(template='plotly_dark')
+                        st.plotly_chart(fig_sentiment)
+
+                        # Option for pie chart
+                        if st.checkbox("Show Pie Chart of Sentiments"):
+                            fig_sentiment_pie = px.pie(sentiment_df, names='Sentiment', values='Count', title='Sentiment Distribution in Neighborhood Descriptions')
+                            st.plotly_chart(fig_sentiment_pie)
+
+                        # Option to display detailed neighborhood descriptions
+                        if st.checkbox("Show Detailed Neighborhood Descriptions"):
+                            st.write(df[['name', 'neighborhood_overview']])
+
+                with tab5:
+                    if 'transit' in df.columns:
+                        st.subheader("Transit Options")
+                        transit_counts = df['transit'].apply(lambda x: len(str(x).split(',')))
+                        fig5 = px.histogram(transit_counts, nbins=10, title='Number of Transit Options',
+                                            labels={'value': 'Number of Transit Options', 'count': 'Number of Listings'},
                                             color_discrete_sequence=px.colors.qualitative.Pastel)
                         fig5.update_layout(template='plotly_dark')
                         st.plotly_chart(fig5)
 
-                    if chart == 'Number of Bathrooms':
-                        st.subheader("Number of Bathrooms")
-                        fig6 = px.histogram(df, x='bathrooms', nbins=15, title='Distribution of Number of Bathrooms',
-                                            labels={'bathrooms': 'Number of Bathrooms', 'count': 'Number of Listings'},
-                                            color_discrete_sequence=px.colors.qualitative.Pastel)
-                        fig6.update_layout(template='plotly_dark')
-                        st.plotly_chart(fig6)
+                with tab6:
+                    if 'price' in df.columns:
+                        st.subheader("Price Analysis")
 
-                    if chart == 'Number of Bedrooms':
-                        st.subheader("Number of Bedrooms")
-                        fig7 = px.histogram(df, x='bedrooms', nbins=15, title='Distribution of Number of Bedrooms',
-                                            labels={'bedrooms': 'Number of Bedrooms', 'count': 'Number of Listings'},
-                                            color_discrete_sequence=px.colors.qualitative.Pastel)
-                        fig7.update_layout(template='plotly_dark')
-                        st.plotly_chart(fig7)
+                        # Display price distribution as histogram
+                        fig_price_hist = px.histogram(df, x='price', nbins=30, title='Distribution of Prices',
+                                                      labels={'price': 'Price (in USD)', 'count': 'Number of Listings'},
+                                                      color_discrete_sequence=px.colors.qualitative.Pastel)
+                        fig_price_hist.update_layout(template='plotly_dark')
+                        st.plotly_chart(fig_price_hist)
 
-                    if chart == 'Number of Beds':
-                        st.subheader("Number of Beds")
-                        fig8 = px.histogram(df, x='beds', nbins=15, title='Distribution of Number of Beds',
-                                            labels={'beds': 'Number of Beds', 'count': 'Number of Listings'},
-                                            color_discrete_sequence=px.colors.qualitative.Pastel)
-                        fig8.update_layout(template='plotly_dark')
-                        st.plotly_chart(fig8)
-
-                    if chart == 'Cleaning Fee Distribution':
-                        st.subheader("Cleaning Fee Distribution")
-                        fig9 = px.histogram(df, x='cleaning_fee', nbins=50, title='Distribution of Cleaning Fees',
-                                            labels={'cleaning_fee': 'Cleaning Fee (USD)', 'count': 'Number of Listings'},
-                                            color_discrete_sequence=px.colors.qualitative.Pastel)
-                        fig9.update_layout(template='plotly_dark')
-                        st.plotly_chart(fig9)
-
-                    if chart == 'Security Deposit Distribution':
-                        st.subheader("Security Deposit Distribution")
-                        fig10 = px.histogram(df, x='security_deposit', nbins=50, title='Distribution of Security Deposits',
-                                             labels={'security_deposit': 'Security Deposit (USD)', 'count': 'Number of Listings'},
-                                             color_discrete_sequence=px.colors.qualitative.Pastel)
-                        fig10.update_layout(template='plotly_dark')
-                        st.plotly_chart(fig10)
-
-                    if chart == 'Weekly Price Distribution':
-                        st.subheader("Weekly Price Distribution")
-                        fig11 = px.histogram(df, x='weekly_price', nbins=50, title='Distribution of Weekly Prices',
-                                             labels={'weekly_price': 'Weekly Price (USD)', 'count': 'Number of Listings'},
-                                             color_discrete_sequence=px.colors.qualitative.Pastel)
-                        fig11.update_layout(template='plotly_dark')
-                        st.plotly_chart(fig11)
-
-                    if chart == 'Monthly Price Distribution':
-                        st.subheader("Monthly Price Distribution")
-                        fig12 = px.histogram(df, x='monthly_price', nbins=50, title='Distribution of Monthly Prices',
-                                             labels={'monthly_price': 'Monthly Price (USD)', 'count': 'Number of Listings'},
-                                             color_discrete_sequence=px.colors.qualitative.Pastel)
-                        fig12.update_layout(template='plotly_dark')
-                        st.plotly_chart(fig12)
+                        # Option for pie chart (if price categories are used)
+                        if st.checkbox("Show Pie Chart of Price Ranges"):
+                            # Define price ranges
+                            price_ranges = {
+                                'Low': df[df['price'] < 100].shape[0],
+                                'Medium': df[(df['price'] >= 100) & (df['price'] < 250)].shape[0],
+                                'High': df[df['price'] >= 250].shape[0]
+                            }
+                            price_range_df = pd.DataFrame(list(price_ranges.items()), columns=['Price Range', 'Count'])
+                            fig_price_pie = px.pie(price_range_df, names='Price Range', values='Count', title='Distribution of Price Ranges')
+                            st.plotly_chart(fig_price_pie)
 
 if __name__ == "__main__":
     main()
